@@ -9,6 +9,9 @@ if [ ! -d "venv" ]; then
     exit 1
 fi
 
-# Attiva l'ambiente virtuale e lancia il programma
+# Attiva il virtual environment
 source venv/bin/activate
+
+# Esegui il programma principale (main.py)
 python main.py
+
