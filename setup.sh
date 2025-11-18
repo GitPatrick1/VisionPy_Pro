@@ -1,15 +1,19 @@
 #!/bin/bash
 
-echo "Aggiornamento pacchetti di sistema e installazione dipendenze di sistema..."
+echo "Aggiornamento pacchetti di sistema e installazione dipendenze..."
 
 sudo apt update
-sudo apt install -y libcamera-dev libcamera-apps cmake ffmpeg python3-pip python3-opencv
 
-echo "Aggiornamento pip..."
-pip3 install --upgrade pip
+sudo apt install -y \
+python3-pyqt6 \
+python3-opencv \
+python3-numpy \
+python3-picamera2 \
+python3-libcamera \
+libcamera-dev \
+libcamera-apps \
+ffmpeg \
+cmake
 
-echo "Installazione dipendenze Python globali..."
-
-pip3 install PyQt6 numpy picamera2
-
-echo "Setup completato. Per eseguire il programma usa ./run.sh"
+echo "Tutte le dipendenze sono state installate con successo."
+echo "Per avviare l'applicazione usa ./run.sh"
