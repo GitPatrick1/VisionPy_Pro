@@ -9,3 +9,4 @@ numpy
 
 # Libreria specifica per controllare la fotocamera del Raspberry Pi
 picamera2
+rpi-libcamera
