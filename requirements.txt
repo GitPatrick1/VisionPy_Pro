@@ -1,12 +1,4 @@
-# Framework per l'interfaccia grafica
 PyQt6
-
-# Libreria principale per computer vision
 opencv-python
-
-# Libreria per operazioni numeriche (dipendenza di OpenCV e Picamera2)
-numpy
-
-# Libreria specifica per controllare la fotocamera del Raspberry Pi
 picamera2
-rpi-libcamera
+numpy
