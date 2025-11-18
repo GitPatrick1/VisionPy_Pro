@@ -1,13 +1,12 @@
-# MainWindow.py
-
 import os
 import sys
 import cv2
 from datetime import datetime
-from PyQt6.QtWidgets import (QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, 
-                            QMessageBox, QFileDialog, QStatusBar)
+from PyQt6.QtWidgets import (QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
+                            QMessageBox, QFileDialog, QStatusBar, QMenu, QDialog)
 from PyQt6.QtCore import Qt, QTimer, QUrl
 from PyQt6.QtGui import QFont, QKeySequence, QShortcut
+
 # Import per la gestione multimediale
 from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput
 
@@ -22,16 +21,35 @@ from OSDNotification import OSDNotification
 from PreviewWidget import PreviewWidget
 from MenuBar import MenuBar
 from TimerManager import TimerManager
+from SettingsManager import SettingsManager
+from DeviceManager import DeviceSelectionDialog, DeviceType
 
 class MainWindow(QMainWindow):
+    
     def __init__(self):
         super().__init__()
+        
+        # --- INIZIALIZZA IL GESTORE DELLE IMPOSTAZIONI ---
+        self.settings_manager = SettingsManager()
+        
+        # --- MOSTRA IL DIALOGO DI SELEZIONE DEL DISPOSITIVO AL PRIMO AVVIO ---
+        device_type_str = self.settings_manager.get_device_type()
+        device_type = DeviceType.JETSON_NANO if device_type_str == "jetson_nano" else DeviceType.RASPBERRY_PI
+        
+        # Se non è mai stata eseguita prima o vuoi forzare la selezione
+        if not os.path.exists(os.path.expanduser("~/VisionPy_Pro/settings.json")):
+            device_dialog = DeviceSelectionDialog(self)
+            if device_dialog.exec() == QDialog.DialogCode.Accepted:
+                device_type = device_dialog.selected_device
+                self.settings_manager.set_device_type(device_type.value)
+            else:
+                sys.exit(0)
         
         # --- VARIABILE DI STATO PER LA REGISTRAZIONE ---
         self.is_recording = False
         
-        # Inizializza i componenti
-        self.camera_manager = CameraManager()
+        # Inizializza i componenti con il dispositivo selezionato
+        self.camera_manager = CameraManager(device_type)
         self.cv_processor = CVProcessor()
         self.camera_thread = None
         self.recording_thread = None
@@ -49,8 +67,7 @@ class MainWindow(QMainWindow):
         self.media_player = QMediaPlayer()
         self.audio_output = QAudioOutput()
         self.media_player.setAudioOutput(self.audio_output)
-        # --- CORREZIONE APPLICATA QUI ---
-        self.media_player.setLoops(QMediaPlayer.Loops.Infinite) # Imposta la riproduzione infinita
+        self.media_player.setLoops(QMediaPlayer.Loops.Infinite)
         
         # Configura la finestra principale
         self.setWindowTitle("VisionPy Pro")
@@ -67,42 +84,40 @@ class MainWindow(QMainWindow):
         
         # Inizializza la fotocamera
         self.init_camera()
-
+        
+        # Visualizza il dispositivo attuale nella barra di stato
+        device_name = "Jetson Nano" if device_type == DeviceType.JETSON_NANO else "Raspberry Pi"
+        print(f"✓ VisionPy Pro avviato con {device_name}")
+    
     def setup_shortcuts(self):
-        """Configura le scorciatoie da tastiera globali usando QShortcut."""
-        # Scorciatoia C: Scatta Foto
+        """Configura le scorciatoie da tastiera globali"""
         shortcut_c = QShortcut(QKeySequence('C'), self)
         shortcut_c.activated.connect(self.capture_photo)
         
-        # Scorciatoia M: Specchia Immagine
         shortcut_m = QShortcut(QKeySequence('M'), self)
         shortcut_m.activated.connect(self.toggle_mirror_shortcut)
         
-        # Scorciatoia V: Avvia/Ferma Registrazione
         shortcut_v = QShortcut(QKeySequence('V'), self)
         shortcut_v.activated.connect(self.on_record_clicked)
         
-        # Scorciatoia T: Avvia Timer
         shortcut_t = QShortcut(QKeySequence('T'), self)
         shortcut_t.activated.connect(self.start_timer)
         
-        # Scorciatoia ESC: Gestisce uscita da schermo intero e chiusura app
         shortcut_esc = QShortcut(QKeySequence(Qt.Key.Key_Escape), self)
         shortcut_esc.activated.connect(self.handle_escape)
-
+    
     def handle_escape(self):
-        """Gestisce la logica per il tasto ESC."""
+        """Gestisce la logica per il tasto ESC"""
         if self.isFullScreen():
             self.showNormal()
         else:
             self.close()
-        
+    
     def init_ui(self):
-        # Widget centrale
+        """Inizializza l'interfaccia utente"""
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         
-        # Layout principale
         main_layout = QHBoxLayout(central_widget)
         
         # Area di visualizzazione della fotocamera (80%)
@@ -118,7 +133,6 @@ class MainWindow(QMainWindow):
         self.control_panel.hsv_changed.connect(self.on_hsv_changed)
         self.control_panel.mirror_changed.connect(self.on_mirror_changed)
         self.control_panel.osd_changed.connect(self.on_osd_changed)
-        # --- Collega il segnale della checkbox della musica ---
         self.control_panel.music_changed.connect(self.on_music_changed)
         self.control_panel.capture_photo.connect(self.capture_photo)
         self.control_panel.record_clicked.connect(self.on_record_clicked)
@@ -126,11 +140,15 @@ class MainWindow(QMainWindow):
         self.control_panel.timer_start.connect(self.start_timer)
         self.control_panel.timer_action_changed.connect(self.on_timer_action_changed)
         self.control_panel.timer_delay_changed.connect(self.on_timer_delay_changed)
+        
         main_layout.addWidget(self.control_panel, 1)
         
         # Crea la barra dei menu
         self.menu_bar = MenuBar(self)
         self.setMenuBar(self.menu_bar)
+        
+        # Aggiungi un menu per il cambio dispositivo
+        self.add_device_menu()
         
         # Crea la barra di stato
         self.status_bar = QStatusBar()
@@ -142,8 +160,51 @@ class MainWindow(QMainWindow):
         
         # Widget per le notifiche On-Screen
         self.osd_notification = OSDNotification(self)
+    
+    def add_device_menu(self):
+        """Aggiunge il menu per il cambio dispositivo"""
+        device_menu = self.menu_bar.addMenu("Dispositivo")
         
+        jetson_action = device_menu.addAction("Usa Jetson Nano")
+        jetson_action.triggered.connect(lambda: self.switch_device(DeviceType.JETSON_NANO))
+        
+        rpi_action = device_menu.addAction("Usa Raspberry Pi")
+        rpi_action.triggered.connect(lambda: self.switch_device(DeviceType.RASPBERRY_PI))
+    
+    def switch_device(self, device_type):
+        """Cambia il dispositivo della fotocamera"""
+        if self.camera_manager.get_device_type() == device_type:
+            QMessageBox.information(self, "Dispositivo", 
+                                  "Il dispositivo è già configurato per questo tipo.")
+            return
+        
+        reply = QMessageBox.question(self, "Cambio Dispositivo",
+                                   "Questa operazione riavvierà la fotocamera. Continuare?",
+                                   QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                                   QMessageBox.StandardButton.No)
+        
+        if reply == QMessageBox.StandardButton.Yes:
+            try:
+                # Ferma la fotocamera attuale
+                if self.camera_thread:
+                    self.camera_thread.stop()
+                    self.camera_thread.wait()
+                
+                # Cambia il dispositivo
+                self.camera_manager.set_device_type(device_type)
+                self.settings_manager.set_device_type(device_type.value)
+                
+                # Riavvia la fotocamera
+                self.init_camera()
+                
+                device_name = "Jetson Nano" if device_type == DeviceType.JETSON_NANO else "Raspberry Pi"
+                QMessageBox.information(self, "Dispositivo", 
+                                      f"Dispositivo cambiato in {device_name}")
+            except Exception as e:
+                QMessageBox.critical(self, "Errore", f"Errore nel cambio dispositivo: {str(e)}")
+    
     def apply_style(self):
+        """Applica lo stile all'applicazione"""
         style = """
         QMainWindow {
             background-color: #2D2D30;
@@ -226,38 +287,47 @@ class MainWindow(QMainWindow):
             color: white;
         }
         """
-        self.setStyleSheet(style)
         
+        self.setStyleSheet(style)
+    
     def init_camera(self):
+        """Inizializza la fotocamera"""
         try:
             self.camera_thread = CameraThread(self.camera_manager, self.cv_processor)
-
             self.camera_thread.frame_ready.connect(self.update_frame)
             self.camera_thread.status_update.connect(self.update_status)
             self.camera_thread.start()
             
             resolution = self.camera_manager.get_resolution()
             fps = self.camera_manager.get_fps()
-            self.status_bar.showMessage(f"Risoluzione: {resolution[0]}x{resolution[1]} | FPS: {fps} | Modalità: Normale")
+            device_name = "Jetson Nano" if self.camera_manager.get_device_type() == DeviceType.JETSON_NANO else "Raspberry Pi"
+            
+            self.status_bar.showMessage(f"Dispositivo: {device_name} | Risoluzione: {resolution[0]}x{resolution[1]} | FPS: {fps} | Modalità: Normale")
+            
         except Exception as e:
-            QMessageBox.critical(self, "Errore della Fotocamera", 
-                                f"Impossibile inizializzare la fotocamera: {str(e)}")
+            QMessageBox.critical(self, "Errore della Fotocamera",
+                               f"Impossibile inizializzare la fotocamera: {str(e)}")
             self.camera_view.setText("Errore: Fotocamera non disponibile")
-
+    
     def update_frame(self, rgb_frame):
+        """Aggiorna il frame visualizzato"""
         self.camera_view.update_frame(rgb_frame)
-        
+    
     def update_status(self, message):
+        """Aggiorna la barra di stato"""
         mode = self.control_panel.mode_combo.currentText()
         resolution = self.camera_manager.get_resolution()
         fps = self.camera_manager.get_fps()
+        device_type = self.camera_manager.get_device_type()
+        device_name = "Jetson Nano" if device_type == DeviceType.JETSON_NANO else "Raspberry Pi"
         
         if "Camera" in message:
-            self.status_bar.showMessage(f"Risoluzione: {resolution[0]}x{resolution[1]} | FPS: {fps} | Modalità: {mode}")
+            self.status_bar.showMessage(f"Dispositivo: {device_name} | Risoluzione: {resolution[0]}x{resolution[1]} | FPS: {fps} | Modalità: {mode}")
         else:
-            self.status_bar.showMessage(f"{message} | Risoluzione: {resolution[0]}x{resolution[1]} | FPS: {fps} | Modalità: {mode}")
-            
+            self.status_bar.showMessage(f"{message} | Dispositivo: {device_name} | Risoluzione: {resolution[0]}x{resolution[1]} | FPS: {fps} | Modalità: {mode}")
+    
     def capture_photo(self):
+        """Cattura una foto"""
         frame = self.camera_manager.capture_frame()
         if frame is not None:
             timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -271,209 +341,183 @@ class MainWindow(QMainWindow):
                 self.preview_widget.show_preview(frame)
                 self.osd_notification.show_notification("Foto Scattata!")
             else:
-                self.status_bar.showMessage(f"Errore nel salvare l'immagine")
-
+                self.status_bar.showMessage("Errore nel salvare l'immagine")
+    
     def on_record_clicked(self):
-        # Usiamo la nostra variabile di stato self.is_recording
+        """Gestisce l'avvio/arresto della registrazione"""
         if not self.is_recording:
             timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
             filename = f"{timestamp}.mp4"
             path = os.path.expanduser(f"~/VisionPy_Pro/videos/{filename}")
             
-            # Crea e avvia il thread di registrazione
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            
+            resolution = self.camera_manager.get_resolution()
+            fps = self.camera_manager.get_fps()
+            
             self.recording_thread = RecordingThread(self.camera_manager)
             self.recording_thread.recording_finished.connect(self.on_recording_finished)
             self.recording_thread.status_update.connect(self.update_status)
             
-            width, height = self.camera_manager.get_resolution()
-            fps = self.camera_manager.get_fps()
-            self.recording_thread.start_recording(path, width, height, fps)
+            self.camera_thread.processed_frame_ready.connect(
+                self.recording_thread.add_frame_to_queue
+            )
             
-            # --- FONDAMENTALE: Aggiorna lo stato e collega i segnali ---
+            self.recording_thread.start_recording(path, resolution[0], resolution[1], fps)
+            
             self.is_recording = True
-            self.camera_manager.is_recording = True # Manteniamo sincronizzato anche il manager
-            self.camera_thread.processed_frame_ready.connect(self.recording_thread.add_frame_to_queue)
-            
-            self.control_panel.update_record_button(True)
-            self.osd_notification.show_notification("Registrazione Iniziata!")
+            self.control_panel.record_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #FF9500;
+                    color: white;
+                    font-weight: bold;
+                    font-size: 16px;
+                    border-radius: 25px;
+                    padding: 10px;
+                }
+                QPushButton:hover {
+                    background-color: #FF7700;
+                }
+            """)
+            self.control_panel.record_btn.setText("FERMA REGISTRAZIONE")
+            self.osd_notification.show_notification("Registrazione Avviata!")
+            self.status_bar.showMessage(f"Registrazione in corso: {filename}")
         else:
-            # Ferma la registrazione
-            if self.recording_thread and self.recording_thread.isRunning():
-                self.camera_thread.processed_frame_ready.disconnect(self.recording_thread.add_frame_to_queue)
+            if self.recording_thread:
                 self.recording_thread.stop_recording()
-            else:
-                # Questo blocco ora è quasi ridondante, ma lo teniamo per sicurezza
-                self.on_recording_finished(True)
-                
-    def on_recording_finished(self, success):
-        # --- FONDAMENTALE: Resetta lo stato quando la registrazione finisce ---
-        self.is_recording = False
-        self.camera_manager.is_recording = False
-
-        self.control_panel.update_record_button(False)
-        if success:
-            self.status_bar.showMessage("Registrazione fermata e salvata.")
+            
+            self.is_recording = False
+            self.control_panel.record_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #FF3B30;
+                    color: white;
+                    font-weight: bold;
+                    font-size: 16px;
+                    border-radius: 25px;
+                    padding: 10px;
+                }
+                QPushButton:hover {
+                    background-color: #D70015;
+                }
+            """)
+            self.control_panel.record_btn.setText("REGISTRA VIDEO")
             self.osd_notification.show_notification("Registrazione Fermata!")
+    
+    def on_recording_finished(self, success):
+        """Callback quando la registrazione è terminata"""
+        if success:
+            self.status_bar.showMessage("Registrazione salvata con successo")
         else:
-            self.status_bar.showMessage("Errore durante la registrazione.")
-            self.osd_notification.show_notification("Errore Registrazione!")
-            
+            self.status_bar.showMessage("Errore durante la registrazione")
+    
+    def show_gallery(self):
+        """Mostra la galleria"""
+        photo_dir = os.path.expanduser("~/VisionPy_Pro/photos")
+        video_dir = os.path.expanduser("~/VisionPy_Pro/videos")
+        
+        gallery_dialog = GalleryDialog(photo_dir, video_dir, self)
+        gallery_dialog.show()
+    
     def on_mode_changed(self, mode):
-        if self.camera_thread:
-            self.camera_thread.set_mode(mode)
-            
-        resolution = self.camera_manager.get_resolution()
-        fps = self.camera_manager.get_fps()
-        self.status_bar.showMessage(f"Risoluzione: {resolution[0]}x{resolution[1]} | FPS: {fps} | Modalità: {mode}")
-        
+        """Gestisce il cambio modalità"""
+        self.camera_thread.set_mode(mode)
+    
     def on_brightness_changed(self, value):
-        if self.camera_thread:
-            self.camera_thread.set_brightness(value)
-            
+        """Gestisce il cambio di luminosità"""
+        self.camera_thread.set_brightness(value)
+    
     def on_contrast_changed(self, value):
-        if self.camera_thread:
-            self.camera_thread.set_contrast(value)
-            
+        """Gestisce il cambio di contrasto"""
+        self.camera_thread.set_contrast(value)
+    
     def on_saturation_changed(self, value):
-        if self.camera_thread:
-            self.camera_thread.set_saturation(value)
-            
+        """Gestisce il cambio di saturazione"""
+        self.camera_thread.set_saturation(value)
+    
     def on_hsv_changed(self, hue_min, hue_max, sat_min, sat_max, val_min, val_max):
-        if self.camera_thread:
-            self.camera_thread.set_hsv_values(hue_min, hue_max, sat_min, sat_max, val_min, val_max)
-            
-    def on_mirror_changed(self, is_checked):
-        if self.camera_thread:
-            self.camera_thread.set_mirror(is_checked)
-
-    def on_osd_changed(self, is_checked):
-        if self.camera_thread:
-            self.camera_thread.set_show_osd(is_checked)
-
-    # --- Metodo per gestire la musica di sottofondo ---
-    def on_music_changed(self, is_checked):
-        music_path = "/home/scuola/VisionPy_Pro/assets/background.mp3"
-        if is_checked:
-            try:
-                if os.path.exists(music_path):
-                    self.media_player.setSource(QUrl.fromLocalFile(music_path))
-                    self.media_player.play()
-                    self.status_bar.showMessage("Musica di sottofondo avviata")
-                    self.osd_notification.show_notification("Musica Avviata!")
-                else:
-                    self.status_bar.showMessage(f"File musicale non trovato: {music_path}")
-                    self.osd_notification.show_notification("File Musicale Non Trovato!")
-                    # Resetta lo stato del checkbox per coerenza
-                    self.control_panel.music_checkbox.setChecked(False)
-            except Exception as e:
-                self.status_bar.showMessage(f"Errore nell'avviare la musica: {str(e)}")
-                self.osd_notification.show_notification("Errore Musica!")
-                self.control_panel.music_checkbox.setChecked(False)
+        """Gestisce il cambio dei valori HSV"""
+        self.camera_thread.set_hsv_values(hue_min, hue_max, sat_min, sat_max, val_min, val_max)
+    
+    def on_mirror_changed(self, mirror):
+        """Gestisce il cambio dello specchiamento"""
+        self.camera_thread.set_mirror(mirror)
+    
+    def on_osd_changed(self, show_osd):
+        """Gestisce il cambio della visualizzazione OSD"""
+        self.camera_thread.set_show_osd(show_osd)
+    
+    def on_music_changed(self, muted):
+        """Gestisce il cambio dello stato della musica"""
+        if muted:
+            self.media_player.play()
         else:
-            try:
-                self.media_player.stop()
-                self.status_bar.showMessage("Musica di sottofondo fermata")
-                self.osd_notification.show_notification("Musica Fermata!")
-            except Exception as e:
-                self.status_bar.showMessage(f"Errore nel fermare la musica: {str(e)}")
-
-    def on_timer_action_changed(self, action):
-        self.timer_manager.set_timer_action(action)
-
-    def on_timer_delay_changed(self, value):
-        self.timer_manager.set_timer_delay(value)
-
+            self.media_player.stop()
+    
+    def toggle_mirror_shortcut(self):
+        """Attiva/disattiva lo specchiamento via scorciatoia"""
+        self.control_panel.mirror_checkbox.setChecked(not self.control_panel.mirror_checkbox.isChecked())
+    
     def start_timer(self):
-        # Disabilita i pulsanti per evitare conflitti
-        self.control_panel.set_timer_buttons_enabled(False)
+        """Avvia il timer"""
+        action = "Scatta Foto" if self.control_panel.timer_radio_photo.isChecked() else "Registra Video"
+        delay = self.control_panel.timer_delay_spinbox.value()
         
-        # Mostra il messaggio iniziale nella barra di stato
-        self.status_bar.showMessage(f"Timer avviato. {self.timer_manager.timer_action} in {self.timer_manager.timer_delay_seconds} secondi...")
-        self.osd_notification.show_notification("Timer Avviato!")
-        
-        # Avvia il timer del countdown
-        self.timer_manager.start_timer()
-
+        self.timer_manager.start_timer(delay, action)
+        self.osd_notification.show_notification(f"Timer: {delay}s")
+    
+    def on_timer_action_changed(self):
+        """Callback per il cambio dell'azione del timer"""
+        action = "Scatta Foto" if self.control_panel.timer_radio_photo.isChecked() else "Registra Video"
+        self.timer_manager.set_timer_action(action)
+    
+    def on_timer_delay_changed(self, value):
+        """Callback per il cambio del ritardo del timer"""
+        self.timer_manager.set_timer_delay(value)
+    
     def update_countdown(self, remaining):
-        if remaining > 0:
-            # Aggiorna la barra di stato con il tempo rimanente
-            self.status_bar.showMessage(f"{self.timer_manager.timer_action} in {remaining} secondi...")
-            
+        """Aggiorna il countdown del timer"""
+        self.osd_notification.show_notification(f"Timer: {remaining}s", duration=800)
+    
     def on_timer_finished(self):
-        # Esegui l'azione scelta
-        if self.timer_manager.timer_action == "Scatta Foto":
+        """Callback quando il timer è terminato"""
+        action = self.timer_manager.timer_action
+        
+        if action == "Scatta Foto":
             self.capture_photo()
-        elif self.timer_manager.timer_action == "Registra Video":
+        else:
             self.on_record_clicked()
-        
-        # Riabilita i pulsanti
-        self.control_panel.set_timer_buttons_enabled(True)
-        
-        self.status_bar.showMessage("Azione eseguita.")
-        self.osd_notification.show_notification("Azione Eseguita!")
-
+    
+    def save_as(self):
+        """Gestisce il salvataggio come"""
+        options = QFileDialog.Option.ReadOnly
+        file_name, _ = QFileDialog.getSaveFileName(
+            self, "Salva come", "", "Immagini (*.jpg *.png);;Tutti i file (*)", options=options
+        )
+    
     def toggle_fullscreen(self):
+        """Attiva/disattiva la modalità schermo intero"""
         if self.isFullScreen():
             self.showNormal()
         else:
             self.showFullScreen()
-
-    def toggle_mirror_shortcut(self):
-        self.control_panel.mirror_checkbox.setChecked(not self.control_panel.mirror_checkbox.isChecked())
-            
-    def save_as(self):
-        frame = self.camera_manager.capture_frame()
-        if frame is not None:
-            filename, _ = QFileDialog.getSaveFileName(
-                self, "Salva Immagine", "", 
-                "Immagini (*.jpg *.jpeg *.png);;Tutti i file (*)"
-            )
-            
-            if filename:
-                success = self.camera_manager.save_frame(frame, filename)
-                
-                if success:
-                    self.status_bar.showMessage(f"Immagine salvata: {filename}")
-                else:
-                    self.status_bar.showMessage(f"Errore nel salvare l'immagine")
-
-    def show_gallery(self):
-        photo_path = os.path.expanduser("~/VisionPy_Pro/photos")
-        video_path = os.path.expanduser("~/VisionPy_Pro/videos")
-        dialog = GalleryDialog(photo_path, video_path, self)
-        dialog.exec()
-            
+    
     def show_about(self):
-        QMessageBox.about(self, "Informazioni su VisionPy Pro", 
-                         "VisionPy Pro v1.0\n\n"
-                         "Un'applicazione avanzata di computer vision per Raspberry Pi.\n\n"
-                         "Sviluppato con PyQt6, picamera2 e OpenCV")
-        
-    def resizeEvent(self, event):
-        super().resizeEvent(event)
-        # Se la notifica è visibile, riposizionala quando la finestra viene ridimensionata
-        if self.osd_notification.isVisible():
-            self.osd_notification.position_notification()
-        
+        """Mostra le informazioni sull'applicazione"""
+        QMessageBox.information(self, "Informazioni", 
+                              "VisionPy Pro v1.0\n\n"
+                              "Applicazione avanzata di acquisizione e elaborazione video\n"
+                              "Supporta Jetson Nano e Raspberry Pi\n\n"
+                              "© 2024")
+    
     def closeEvent(self, event):
-        self.status_bar.showMessage("Chiusura in corso...")
-
-        # --- MODIFICA: Usa la nostra variabile di stato ---
-        if self.is_recording and self.recording_thread and self.recording_thread.isRunning():
-            self.camera_thread.processed_frame_ready.disconnect(self.recording_thread.add_frame_to_queue)
-            self.recording_thread.stop_recording()
-            if not self.recording_thread.wait(3000):
-                self.status_bar.showMessage("Attenzione: il thread di registrazione non ha chiuso in tempo.")
-
-        if self.camera_thread and self.camera_thread.isRunning():
+        """Gestisce la chiusura dell'applicazione"""
+        if self.camera_thread:
             self.camera_thread.stop()
-            if not self.camera_thread.wait(5000):
-                self.status_bar.showMessage("Attenzione: il thread della fotocamera non ha chiuso in tempo. Uscita forzata.")
-
-        # Ferma il timer del countdown se è attivo
-        self.timer_manager.stop_timer()
-
-        # --- Ferma la musica di sottofondo all'uscita ---
-        self.media_player.stop()
-
+        
+        if self.recording_thread and self.is_recording:
+            self.recording_thread.stop_recording()
+        
+        if self.media_player.isPlaying():
+            self.media_player.stop()
+        
         event.accept()
