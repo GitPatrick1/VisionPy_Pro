@@ -1,4 +1,0 @@
-PyQt6
-opencv-python
-picamera2
-numpy
