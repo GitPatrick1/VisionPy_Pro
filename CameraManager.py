@@ -25,11 +25,11 @@ class CameraManager(QObject):
         self.output = None
         self.cap = None
         self.camera_index = 0  # Per PC e Jetson: indice della webcam
-        
+
     def set_camera_index(self, index):
         """Imposta l'indice della fotocamera per PC/Jetson"""
         self.camera_index = index
-        
+
     def start(self):
         """Inizializza la fotocamera in base al dispositivo selezionato"""
         try:
@@ -42,12 +42,11 @@ class CameraManager(QObject):
         except Exception as e:
             print(f"Errore nell'avvio della fotocamera: {str(e)}")
             return False
-    
+
     def _start_pc(self):
         """Inizializza la fotocamera per PC (webcam USB)"""
         try:
             self.cap = cv2.VideoCapture(self.camera_index)
-            
             if not self.cap.isOpened():
                 raise Exception("Impossibile aprire la webcam")
             
@@ -63,16 +62,14 @@ class CameraManager(QObject):
             
             print(f"✓ Webcam PC inizializzata - {self.resolution[0]}x{self.resolution[1]} @ {self.fps} FPS")
             return True
-            
         except Exception as e:
             print(f"Errore nell'inizializzazione PC: {str(e)}")
             return False
-    
+
     def _start_jetson_nano(self):
         """Inizializza la fotocamera per Jetson Nano usando OpenCV"""
         try:
             self.cap = cv2.VideoCapture(self.camera_index, cv2.CAP_V4L2)
-            
             if not self.cap.isOpened():
                 raise Exception("Impossibile aprire la telecamera (Jetson Nano)")
             
@@ -88,35 +85,31 @@ class CameraManager(QObject):
             
             print(f"✓ Fotocamera Jetson Nano inizializzata - {self.resolution[0]}x{self.resolution[1]} @ {self.fps} FPS")
             return True
-            
         except Exception as e:
             print(f"Errore nell'inizializzazione Jetson Nano: {str(e)}")
             return False
-    
+
     def _start_raspberry_pi(self):
         """Inizializza la fotocamera per Raspberry Pi usando picamera2"""
         try:
             from picamera2 import Picamera2
-            
             self.picam2 = Picamera2()
             self.config = self.picam2.create_video_configuration(
                 main={"size": self.resolution, "format": "XRGB8888"}
             )
-            
             self.picam2.configure(self.config)
             self.picam2.start()
             self.picam2.set_controls({"FrameRate": self.fps})
             
             print(f"✓ Fotocamera Raspberry Pi inizializzata - {self.resolution[0]}x{self.resolution[1]} @ {self.fps} FPS")
             return True
-            
         except ImportError:
             print("Errore: picamera2 non è installato. Installa con: pip install picamera2")
             return False
         except Exception as e:
             print(f"Errore nell'inizializzazione Raspberry Pi: {str(e)}")
             return False
-    
+
     def stop(self):
         """Arresta la fotocamera"""
         if self.is_recording:
@@ -129,7 +122,7 @@ class CameraManager(QObject):
         else:
             if self.cap:
                 self.cap.release()
-    
+
     def get_frame(self):
         """Cattura un frame dalla fotocamera"""
         try:
@@ -142,7 +135,7 @@ class CameraManager(QObject):
         except Exception as e:
             print(f"Errore nella cattura del frame: {str(e)}")
             return None
-    
+
     def _get_frame_pc(self):
         """Cattura un frame da PC (webcam USB)"""
         if self.cap:
@@ -151,7 +144,7 @@ class CameraManager(QObject):
                 self.frame = frame.copy()
                 return frame
         return None
-    
+
     def _get_frame_jetson_nano(self):
         """Cattura un frame da Jetson Nano"""
         if self.cap:
@@ -160,7 +153,7 @@ class CameraManager(QObject):
                 self.frame = frame.copy()
                 return frame
         return None
-    
+
     def _get_frame_raspberry_pi(self):
         """Cattura un frame da Raspberry Pi"""
         if self.picam2:
@@ -174,13 +167,13 @@ class CameraManager(QObject):
                 print(f"Errore nella cattura del frame: {str(e)}")
                 return None
         return None
-    
+
     def capture_frame(self):
         """Restituisce il frame corrente in memoria"""
         if self.frame is not None:
             return self.frame.copy()
         return None
-    
+
     def save_frame(self, frame, path):
         """Salva un frame su disco"""
         try:
@@ -190,14 +183,14 @@ class CameraManager(QObject):
         except Exception as e:
             print(f"Errore nel salvare l'immagine: {str(e)}")
             return False
-    
+
     def start_recording(self, path):
         """Avvia la registrazione video"""
         if self.device_type == DeviceType.RASPBERRY_PI:
             return self._start_recording_raspberry_pi(path)
         else:
             return self._start_recording_jetson_pc(path)
-    
+
     def _start_recording_jetson_pc(self, path):
         """Avvia la registrazione su Jetson Nano o PC (tramite file writer manuale)"""
         try:
@@ -208,7 +201,7 @@ class CameraManager(QObject):
         except Exception as e:
             print(f"Errore nell'avviare la registrazione: {str(e)}")
             return False
-    
+
     def _start_recording_raspberry_pi(self, path):
         """Avvia la registrazione su Raspberry Pi usando picamera2"""
         if not self.is_recording and self.picam2:
@@ -228,14 +221,14 @@ class CameraManager(QObject):
                 self.output = None
                 return False
         return False
-    
+
     def stop_recording(self):
         """Ferma la registrazione video"""
         if self.device_type == DeviceType.RASPBERRY_PI:
             return self._stop_recording_raspberry_pi()
         else:
             return self._stop_recording_jetson_pc()
-    
+
     def _stop_recording_jetson_pc(self):
         """Ferma la registrazione su Jetson Nano o PC"""
         try:
@@ -245,7 +238,7 @@ class CameraManager(QObject):
         except Exception as e:
             print(f"Errore nel fermare la registrazione: {str(e)}")
             return False
-    
+
     def _stop_recording_raspberry_pi(self):
         """Ferma la registrazione su Raspberry Pi"""
         if self.is_recording and self.picam2:
@@ -262,7 +255,7 @@ class CameraManager(QObject):
                 self.output = None
                 return False
         return False
-    
+
     def apply_controls(self, frame, brightness, contrast, saturation):
         """Applica controlli di luminosità, contrasto e saturazione"""
         if brightness != 0:
@@ -281,19 +274,18 @@ class CameraManager(QObject):
             frame = cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
         
         return frame
-    
+
     def get_resolution(self):
         """Restituisce la risoluzione impostata"""
         return self.resolution
-    
+
     def get_fps(self):
         """Restituisce gli FPS impostati"""
         return self.fps
-    
+
     def set_resolution(self, resolution):
         """Imposta la risoluzione della fotocamera"""
         self.resolution = resolution
-        
         if self.device_type == DeviceType.RASPBERRY_PI:
             if self.picam2:
                 self.config = self.picam2.create_video_configuration(
@@ -304,39 +296,52 @@ class CameraManager(QObject):
             if self.cap:
                 self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, resolution[0])
                 self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, resolution[1])
-    
+
     def set_fps(self, fps):
         """Imposta gli FPS della fotocamera"""
         self.fps = fps
-        
         if self.device_type == DeviceType.RASPBERRY_PI:
             if self.picam2:
                 self.picam2.set_controls({"FrameRate": fps})
         else:
             if self.cap:
                 self.cap.set(cv2.CAP_PROP_FPS, fps)
-    
+
     def get_device_type(self):
         """Restituisce il tipo di dispositivo attualmente configurato"""
         return self.device_type
-    
+
     def set_device_type(self, device_type):
         """Cambia il tipo di dispositivo"""
         if self.device_type != device_type:
             self.stop()
             self.device_type = device_type
             self.start()
-    
+
     def list_available_cameras(self):
-        """Elenca le webcam disponibili (solo per PC/Jetson)"""
+        """
+        ✅ NUOVO METODO - Elenca le webcam disponibili (solo per PC/Jetson)
+        Risolve il problema di camera non disponibile al riavvio
+        """
         if self.device_type == DeviceType.RASPBERRY_PI:
-            return [0]  # Raspberry Pi ha una sola camera
+            # Raspberry Pi ha una sola camera
+            try:
+                from picamera2 import Picamera2
+                picam2 = Picamera2()
+                picam2.close()
+                return [0]  # Camera disponibile
+            except Exception as e:
+                print(f"Errore: Picamera2 non disponibile - {str(e)}")
+                return []
         
+        # Per PC e Jetson: testa fisicamente le webcam
         available = []
         for i in range(10):
             cap = cv2.VideoCapture(i)
             if cap.isOpened():
-                available.append(i)
+                ret, frame = cap.read()
+                if ret:  # ✅ Verifica che effettivamente catturi un frame
+                    available.append(i)
                 cap.release()
         
-        return available if available else [0]
+        return available if available else []
