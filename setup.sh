@@ -25,6 +25,8 @@ echo ""
 echo "[1/6] Aggiornamento dei pacchetti di sistema e installazione delle dipendenze..."
 sudo apt update
 sudo apt install -y ffmpeg python3-pip python3-venv wget git
+sudo apt-get update
+sudo apt-get install libcap-dev
 echo "✓ Dipendenze di sistema installate."
 echo ""
 
