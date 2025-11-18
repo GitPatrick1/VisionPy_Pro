@@ -12,7 +12,7 @@ class SettingsManager:
         # Impostazioni di default
         self.default_settings = {
             "music_muted": False,
-            "device_type": "pc",          # DEFAULT: PC
+            "device_type": "raspberry_pi",          # DEFAULT: PC
             "resolution": [1280, 720],
             "fps": 30,
             "camera_index": 0             # NEW: Per PC/Jetson, quale webcam usare
