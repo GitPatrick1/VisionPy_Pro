@@ -9,14 +9,26 @@ sudo apt update
 
 echo -e "\n2. Installazione delle librerie e dipendenze richieste..."
 echo "   Questo potrebbe richiedere alcuni minuti."
+
+if grep -qi 'raspberry' /proc/device-tree/model 2>/dev/null; then
+    echo "Dispositivo rilevato: Raspberry Pi"
+    echo -e "\nInstallazione dipendenze aggiuntive per Raspberry Pi...\n"
+    sudo apt install -y \
+        python3-picamera2 \
+        python3-libcamera \
+        libcamera-dev \
+        libcamera-apps
+else
+    echo "Dispositivo rilevato: Non Raspberry Pi (PC/Jetson etc.)"
+    # Prova comunque a installare queste dipendenze (non appesantisce)
+    sudo apt install -y python3-picamera2 python3-libcamera libcamera-dev libcamera-apps || true
+fi
+
+# Dipendenze comuni a tutti i dispositivi
 sudo apt install -y \
     python3-pyqt6 \
     python3-opencv \
     python3-numpy \
-    python3-picamera2 \
-    python3-libcamera \
-    libcamera-dev \
-    libcamera-apps \
     ffmpeg \
     cmake
 
