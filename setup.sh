@@ -27,6 +27,7 @@ sudo apt update
 sudo apt install -y ffmpeg python3-pip python3-venv wget git
 sudo apt-get update
 sudo apt-get install libcap-dev
+sudo apt install cmake libcamera-dev
 echo "✓ Dipendenze di sistema installate."
 echo ""
 
