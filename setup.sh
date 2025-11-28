@@ -27,6 +27,7 @@ fi
 # Dipendenze comuni a tutti i dispositivi
 sudo apt install -y \
     python3-pyqt6 \
+    python3-pyqt6.qtmultimedia \
     python3-opencv \
     python3-numpy \
     ffmpeg \
