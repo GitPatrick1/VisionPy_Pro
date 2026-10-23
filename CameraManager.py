@@ -1,4 +1,5 @@
 import os
+import platform
 import cv2
 import numpy as np
 from PyQt6.QtCore import QObject
@@ -46,7 +47,14 @@ class CameraManager(QObject):
     def _start_pc(self):
         """Inizializza la fotocamera per PC (webcam USB)"""
         try:
-            self.cap = cv2.VideoCapture(self.camera_index)
+            if platform.system() == "Windows":
+                backend = cv2.CAP_DSHOW
+            elif platform.system() == "Linux":
+                backend = cv2.CAP_V4L2
+            else:
+                backend = cv2.CAP_ANY
+                
+            self.cap = cv2.VideoCapture(self.camera_index,backend)
             if not self.cap.isOpened():
                 raise Exception("Impossibile aprire la webcam")
             
